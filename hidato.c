@@ -62,12 +62,12 @@ unsigned long set_links(cell_t *, cell_t *[]);
 void set_choice(cell_t **, cell_t *);
 void stack_unroll(unroll_t *, cell_t *);
 void perform_unroll(unroll_t *);
-void remove_cell_value(cell_t *, unsigned long);
+void clear_cell_value(cell_t *, unsigned long);
 void add_pipes(cell_t *, unsigned long);
 void add_pipe(cell_t *, unsigned long, cell_t *);
 void stack_roll(roll_t *, value_t *, cell_t *, unroll_t *);
 void perform_roll(roll_t *);
-unsigned long add_cell_value(cell_t *, value_t *);
+unsigned long set_cell_value(cell_t *, value_t *);
 unsigned long remove_pipes(cell_t *);
 unsigned long remove_pipe(cell_t *, unsigned long, cell_t *);
 void set_unroll_pipes(unroll_t *, unsigned long);
@@ -81,7 +81,7 @@ unroll_t *stack_unrolls;
 roll_t *stack_rolls;
 
 int main(void) {
-unsigned long cells_n, h_cells_n, w_cells_n, i, j;
+unsigned long cells_n, h_cells_n, w_cells_n, pipes, i, j;
 value_t *value;
 cell_t *cell;
 	if (scanf("%lu", &values_n) != 1) {
@@ -175,7 +175,7 @@ cell_t *cell;
 					return EXIT_FAILURE;
 				}
 				else {
-					add_cell_value(cells+i, values+j-1);
+					set_cell_value(cells+i, values+j-1);
 				}
 				h_cells_n++;
 			}
@@ -192,7 +192,7 @@ cell_t *cell;
 				w_cells_n++;
 				break;
 			case CELL_BLACK:
-				add_cell_value(cells+i, value_black);
+				set_cell_value(cells+i, value_black);
 				break;
 			default:
 				fprintf(stderr, "Invalid cell\n");
@@ -205,12 +205,6 @@ cell_t *cell;
 	}
 	if (h_cells_n+w_cells_n != values_n) {
 		fprintf(stderr, "Inconsistent grid\n");
-		free(values);
-		free(cells);
-		return EXIT_FAILURE;
-	}
-	if (!h_cells_n) {
-		fprintf(stderr, "No hints provided\n");
 		free(values);
 		free(cells);
 		return EXIT_FAILURE;
@@ -239,7 +233,18 @@ cell_t *cell;
 		free(cells);
 		return EXIT_FAILURE;
 	}
-	hidato();
+	if (h_cells_n) {
+		hidato();
+	}
+	else {
+		for (i = 0; i < cells_n; i++) {
+			if (!cells[i].value) {
+				pipes = set_cell_value(cells+i, values);
+				hidato();
+				clear_cell_value(cells+i, pipes);
+			}
+		}
+	}
 	free(stack_rolls);
 	free(stack_unrolls);
 	free(stack_calls);
@@ -318,7 +323,7 @@ cell_t *cell, *choices_min[LINKS_MAX], *choices[LINKS_MAX];
 	else {
 		value_min = value_black->next;
 		choices_n_min = set_choices(value_min, choices_min);
-		for (value = value_min->next; value != value_black && choices_n_min > 1; value = value->next) {
+		for (value = value_min->next; value != value_black && choices_n_min; value = value->next) {
 			choices_n = set_choices(value, choices);
 			if (choices_n < choices_n_min) {
 				value_min = value;
@@ -353,47 +358,20 @@ unsigned long links_inf_n, links_sup_n, choices_n, i, j;
 cell_t *cell_inf, *links_inf[LINKS_MAX], *cell_sup, *links_sup[LINKS_MAX];
 	if (value->number > 1) {
 		cell_inf = values[value->number-2].cell;
-		if (cell_inf) {
-			links_inf_n = set_links(cell_inf, links_inf);
-		}
-		else {
-			links_inf_n = LINKS_MAX+1;
-		}
 	}
 	else {
-		links_inf_n = LINKS_MAX+1;
+		cell_inf = NULL;
 	}
 	if (value->number < values_n) {
 		cell_sup = values[value->number].cell;
+	}
+	else {
+		cell_sup = NULL;
+	}
+	if (cell_inf) {
+		links_inf_n = set_links(cell_inf, links_inf);
 		if (cell_sup) {
 			links_sup_n = set_links(cell_sup, links_sup);
-		}
-		else {
-			links_sup_n = LINKS_MAX+1;
-		}
-	}
-	else {
-		links_sup_n = LINKS_MAX+1;
-	}
-	if (links_inf_n > LINKS_MAX) {
-		if (links_sup_n > LINKS_MAX) {
-			return LINKS_MAX+1;
-		}
-		else {
-			for (i = 0; i < links_sup_n; i++) {
-				set_choice(choices+i, links_sup[i]);
-			}
-			return links_sup_n;
-		}
-	}
-	else {
-		if (links_sup_n > LINKS_MAX) {
-			for (i = 0; i < links_inf_n; i++) {
-				set_choice(choices+i, links_inf[i]);
-			}
-			return links_inf_n;
-		}
-		else {
 			choices_n = 0;
 			j = 0;
 			for (i = 0; i < links_inf_n; i++) {
@@ -407,6 +385,24 @@ cell_t *cell_inf, *links_inf[LINKS_MAX], *cell_sup, *links_sup[LINKS_MAX];
 				}
 			}
 			return choices_n;
+		}
+		else {
+			for (i = 0; i < links_inf_n; i++) {
+				set_choice(choices+i, links_inf[i]);
+			}
+			return links_inf_n;
+		}
+	}
+	else {
+		if (cell_sup) {
+			links_sup_n = set_links(cell_sup, links_sup);
+			for (i = 0; i < links_sup_n; i++) {
+				set_choice(choices+i, links_sup[i]);
+			}
+			return links_sup_n;
+		}
+		else {
+			return LINKS_MAX+1;
 		}
 	}
 }
@@ -458,10 +454,10 @@ void stack_unroll(unroll_t *unroll, cell_t *cell) {
 }
 
 void perform_unroll(unroll_t *unroll) {
-	remove_cell_value(unroll->cell, unroll->pipes);
+	clear_cell_value(unroll->cell, unroll->pipes);
 }
 
-void remove_cell_value(cell_t *cell, unsigned long pipes) {
+void clear_cell_value(cell_t *cell, unsigned long pipes) {
 value_t *value = cell->value;
 	cell->value = NULL;
 	add_pipes(cell, pipes);
@@ -510,10 +506,10 @@ void stack_roll(roll_t *roll, value_t *value, cell_t *cell, unroll_t *unroll) {
 }
 
 void perform_roll(roll_t *roll) {
-	set_unroll_pipes(roll->unroll, add_cell_value(roll->cell, roll->value));
+	set_unroll_pipes(roll->unroll, set_cell_value(roll->cell, roll->value));
 }
 
-unsigned long add_cell_value(cell_t *cell, value_t *value) {
+unsigned long set_cell_value(cell_t *cell, value_t *value) {
 unsigned long pipes;
 	if (value) {
 		value->cell = cell;
